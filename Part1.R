@@ -69,7 +69,7 @@ rmses <- sapply(lambdas, function(l){
     pull(pred)
   return(RMSE(pred, edx_test$rating))
 })
-lambda<-lambdas[which.min(rmses)]
+lambda<-lambdas[which.min(rmses)]#Find the best lambda
 #best lambda is 1.5
 #Predicting with the movie effect regularizated
 movie_reg_avgs <- edx_train %>% 
@@ -94,7 +94,7 @@ rmses <- sapply(lambdas, function(l){
     pull(pred)
   return(RMSE(pred, edx_test$rating))
 })
-lambda<-lambdas[which.min(rmses)]
+lambda<-lambdas[which.min(rmses)]#Find the best lambda
 #best lambda is 5
 #Predicting with the user effect regularizated
 user_reg_avgs <- edx_train %>% left_join(movie_reg_avgs,by="movieId")%>%
@@ -105,3 +105,39 @@ pred_uer<-mu+test_bir+test_uir+test_gi
 rmse_uer<-RMSE(edx_test$rating,pred_uer)
 rmsedata<-bind_rows(rmsedata,data.frame(Method="Movie Reg+User Reg+Genre",RMSE=rmse_uer))
 #RMSE=0.8638
+#Calculating the effect of the genres REGULARIZATED
+lambdas <- seq(0, 10, 0.25)
+only_sumg <- edx_train  %>%left_join(movie_reg_avgs,by="movieId")%>%
+  left_join(user_reg_avgs,by="userId")%>%
+  group_by(genres) %>% 
+  summarize(s3 = sum(rating - mu-b_ir-u_ir), n_i3 = n())
+rmses <- sapply(lambdas, function(l){
+  pred <-edx_test  %>% left_join(movie_reg_avgs,by="movieId")%>%
+     left_join(user_reg_avgs,by="userId")%>%
+    left_join(only_sumg, by='genres') %>% 
+    mutate(g_ir = s3/(n_i3+l)) %>%
+    mutate(pred = mu + b_ir+u_ir+g_ir) %>%
+    pull(pred)
+  return(RMSE(pred, edx_test$rating))
+})
+lambda<-lambdas[which.min(rmses)]#Find the best lambda
+#best lambda is 0 
+#Predicting with the genre effect regularizated
+genre_reg_avgs <- edx_train %>% left_join(movie_reg_avgs,by="movieId")%>%
+  left_join(user_reg_avgs,by="userId")%>%
+  group_by(genres) %>% 
+  summarize(g_ir = sum(rating - mu-b_ir-u_ir)/(n()+lambda), n_i = n()) 
+test_gir<-edx_test%>%left_join(genre_reg_avgs,by="genres")%>%pull(g_ir)
+pred_ger<-mu+test_bir+test_uir+test_gir
+rmse_ger<-RMSE(edx_test$rating,pred_ger)
+rmsedata<-bind_rows(rmsedata,data.frame(Method="Movie Reg+User Reg+Genre Reg",RMSE=rmse_ger))
+#RMSE=0.8638, very  small change
+#Testing with the validation set
+pred_vr<-validation%>%left_join(movie_reg_avgs,by="movieId")%>%left_join(user_reg_avgs,by="userId")%>%
+  left_join(genre_reg_avgs,by="genres")%>%mutate(pred=mu+b_ir+u_ir+g_ir)%>%pull(pred)
+pred_vr[is.na(pred_vr)]<-mu
+pred_vr[pred_vr>5]<-5
+pred_vr[pred_vr<0.5]<-0.5
+rmse_vr<-RMSE(validation$rating,pred_vr)
+rmsedata<-bind_rows(rmsedata,data.frame(Method="Validation Reg RMSE",RMSE=rmse_vr))
+#FINAL RMSE=0.8648047
